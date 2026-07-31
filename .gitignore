@@ -118,3 +118,9 @@ ENV/
 
 CLAUDE.md
 AGENTS.md
+
+# nnU-Net data roots and the raw quiz data
+nnUNet_data/
+/train/
+/validation/
+/test/

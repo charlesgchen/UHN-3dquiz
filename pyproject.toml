@@ -72,6 +72,8 @@ nnUNetv2_find_best_configuration = "nnunetv2.evaluation.find_best_configuration:
 nnUNetv2_determine_postprocessing = "nnunetv2.postprocessing.remove_connected_components:entry_point_determine_postprocessing_folder"
 nnUNetv2_apply_postprocessing = "nnunetv2.postprocessing.remove_connected_components:entry_point_apply_postprocessing"
 nnUNetv2_ensemble = "nnunetv2.ensembling.ensemble:entry_point_ensemble_folders"
+nnUNetv2_predict_quiz = "nnunetv2.inference.predict_quiz:predict_quiz_entry"
+nnUNetv2_evaluate_quiz = "nnunetv2.evaluation.evaluate_quiz:evaluate_quiz_entry"
 nnUNetv2_accumulate_crossval_results = "nnunetv2.evaluation.find_best_configuration:accumulate_crossval_results_entry_point"
 nnUNetv2_plot_overlay_pngs = "nnunetv2.utilities.overlay_plots:entry_point_generate_overlay"
 nnUNetv2_download_pretrained_model_by_url = "nnunetv2.model_sharing.entry_points:download_by_url"
@@ -110,3 +112,8 @@ ignore = ["F403", "F405", "E501", "E741", "E722"]
 [tool.codespell]
 skip = '.git,*.pdf,*.svg'
 ignore-words-list = 'LiTS,assertIn'
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: tests that build and run the full network (minutes on CPU); deselect with -m 'not slow'",
+]

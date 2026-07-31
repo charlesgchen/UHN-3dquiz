@@ -150,6 +150,51 @@ def test_network_is_multitask_and_losses_are_separate(tmp_path, monkeypatch):
 
 @needs_data
 @pytest.mark.slow
+def test_early_stopping_triggers_anneal_then_stops(tmp_path, monkeypatch):
+    """
+    Force convergence immediately and check the trainer anneals out and stops before num_epochs,
+    rather than either running to the end or stopping with the learning rate still high.
+    """
+    trainer = _tiny_trainer(tmp_path, monkeypatch)
+    trainer.num_epochs = 50
+    trainer.enable_early_stopping = True
+    trainer.convergence_anneal_epochs = 2
+    trainer.convergence_detector.patience = 1
+    trainer.convergence_detector.min_epochs = 0
+    trainer.convergence_detector.smoothing = 0.0
+    # a constant monitored value converges as soon as patience allows
+    monkeypatch.setattr(type(trainer), '_monitored_value', lambda self: 0.5)
+
+    trainer.run_training()
+
+    assert trainer.convergence_detector.has_converged
+    assert trainer.current_epoch < trainer.num_epochs, 'training should have stopped early'
+    assert os.path.isfile(os.path.join(trainer.output_folder, 'convergence_state.json'))
+
+    lrs = trainer.logger.get_value('lrs', step=None)
+    assert lrs[-1] < lrs[0], 'learning rate must have been annealed down before stopping'
+    assert lrs[-1] == pytest.approx(0.0, abs=1e-6), f'expected an annealed LR, got {lrs[-1]}'
+
+
+@needs_data
+@pytest.mark.slow
+def test_report_only_mode_does_not_stop(tmp_path, monkeypatch):
+    trainer = _tiny_trainer(tmp_path, monkeypatch)
+    trainer.num_epochs = 3
+    trainer.enable_early_stopping = False
+    trainer.convergence_detector.patience = 1
+    trainer.convergence_detector.min_epochs = 0
+    trainer.convergence_detector.smoothing = 0.0
+    monkeypatch.setattr(type(trainer), '_monitored_value', lambda self: 0.5)
+
+    trainer.run_training()
+
+    assert trainer.convergence_detector.has_converged, 'convergence should still be detected'
+    assert len(trainer.logger.get_value('train_losses', step=None)) == 3, 'all epochs should have run'
+
+
+@needs_data
+@pytest.mark.slow
 def test_validation_step_returns_probabilities_and_targets(tmp_path, monkeypatch):
     trainer = _tiny_trainer(tmp_path, monkeypatch)
     # dataloaders are created in on_train_start (nnUNetTrainer.py:946), not in initialize()

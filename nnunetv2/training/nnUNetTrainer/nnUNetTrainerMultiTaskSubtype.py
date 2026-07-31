@@ -36,15 +36,20 @@ Model selection
 """
 
 import os
-from typing import List, Union
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
-from batchgenerators.utilities.file_and_folder_operations import join, load_json, isfile
+from batchgenerators.utilities.file_and_folder_operations import isfile, join, load_json, save_json
 from torch import autocast, nn
 
 from nnunetv2.evaluation.quiz_metrics import classification_metrics, confusion_matrix_counts, format_report
 from nnunetv2.paths import nnUNet_raw
+from nnunetv2.training.convergence import (
+    AnnealOutLRScheduler,
+    ConvergenceDetector,
+    ConvergenceReached,
+)
 from nnunetv2.training.logging.multitask_logger import MultiTaskMetaLogger
 from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
 from nnunetv2.training.nnUNetTrainer.variants.network_architecture.resenc_unet_with_cls import (
@@ -100,6 +105,16 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
     cls_label_smoothing: float = 0.1
     cls_warmup_epochs: int = 25
 
+    # convergence detection / early stopping. See nnunetv2/training/convergence.py for why stopping
+    # is followed by an anneal-out phase rather than being immediate.
+    enable_early_stopping: bool = True
+    convergence_metric: str = 'combined'      # 'combined' | 'ema_fg_dice' | 'cls_macro_f1'
+    convergence_patience: int = 50
+    convergence_min_delta: float = 1e-3
+    convergence_min_epochs: int = 100
+    convergence_smoothing: float = 0.9
+    convergence_anneal_epochs: int = 25
+
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
                  device: torch.device = torch.device('cuda')):
         super().__init__(plans, configuration, fold, dataset_json, device)
@@ -111,6 +126,17 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
         self.subtype_labels = self._load_subtype_labels()
         self.cls_class_weights = None  # built in initialize(), needs the training split
         self.cls_loss = None
+
+        self.convergence_detector = ConvergenceDetector(
+            patience=self.convergence_patience,
+            min_delta=self.convergence_min_delta,
+            min_epochs=max(self.convergence_min_epochs, self.cls_warmup_epochs),
+            smoothing=self.convergence_smoothing,
+        )
+        # all set when the anneal-out phase starts
+        self._final_epoch: Optional[int] = None
+        self._anneal_start_epoch: Optional[int] = None
+        self._anneal_start_lr: Optional[float] = None
 
     # ------------------------------------------------------------------ setup
 
@@ -306,6 +332,58 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
         finally:
             self.network = network
 
+    # ------------------------------------------------------------------ convergence
+
+    def _monitored_value(self) -> float:
+        """The scalar the convergence detector watches. Higher is better, roughly in [0, 1]."""
+        segmentation = float(self.logger.get_value('ema_fg_dice', -1))
+        classification = float(self.logger.get_value('cls_macro_f1', -1))
+        if self.convergence_metric == 'ema_fg_dice':
+            return segmentation
+        if self.convergence_metric == 'cls_macro_f1':
+            return classification
+        if self.convergence_metric == 'combined':
+            # both are in [0, 1] so a plain mean is meaningful. Using segmentation alone would stop
+            # while classification is still improving: it has a warmup and only 252 case labels, so
+            # it converges later than segmentation.
+            return 0.5 * (segmentation + classification)
+        raise ValueError(f'unknown convergence_metric {self.convergence_metric!r}')
+
+    def _start_anneal_out(self, anneal_start_epoch: Optional[int] = None, start_lr: Optional[float] = None):
+        """
+        Replace the poly schedule with a decay from the current LR to ~0 over anneal_epochs.
+
+        Epoch bookkeeping: this runs from on_epoch_end, which is called *after*
+        nnUNetTrainer.on_epoch_end has already incremented current_epoch. So self.current_epoch is the
+        index of the next epoch that will run, and the anneal covers epochs
+        [anneal_start, anneal_start + anneal_epochs - 1] inclusive. The polynomial denominator is
+        anneal_epochs - 1 so that the *last epoch actually executed* sees lr = 0, not the epoch after
+        the run has already stopped.
+
+        The arguments are supplied when restoring a resumed run, so that resuming mid-anneal continues
+        the original schedule instead of restarting (and thereby extending) it.
+        """
+        if self.convergence_anneal_epochs < 2:
+            raise ValueError('convergence_anneal_epochs must be >= 2 for the learning rate to actually '
+                             f'decay; got {self.convergence_anneal_epochs}')
+
+        self._anneal_start_epoch = anneal_start_epoch if anneal_start_epoch is not None else self.current_epoch
+        self._final_epoch = self._anneal_start_epoch + self.convergence_anneal_epochs
+        current_lr = start_lr if start_lr is not None else self.optimizer.param_groups[0]['lr']
+        self._anneal_start_lr = current_lr
+        self.lr_scheduler = AnnealOutLRScheduler(
+            self.optimizer,
+            start_lr=current_lr,
+            start_epoch=self._anneal_start_epoch,
+            num_epochs=self.convergence_anneal_epochs - 1,
+        )
+        self.print_to_log_file(
+            f'Convergence detected at epoch {self.current_epoch}. Best smoothed '
+            f'{self.convergence_metric} = {np.round(self.convergence_detector.best_value, 4)} at epoch '
+            f'{self.convergence_detector.best_epoch}. Annealing the learning rate from '
+            f'{np.round(current_lr, 6)} to 0 over epochs '
+            f'{self._anneal_start_epoch}-{self._final_epoch - 1}, then stopping.')
+
     def on_epoch_end(self):
         super().on_epoch_end()
         self.print_to_log_file(
@@ -313,3 +391,76 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
             f"bal_acc {np.round(self.logger.get_value('cls_balanced_accuracy', -1), 4)}, "
             f"macro_F1 {np.round(self.logger.get_value('cls_macro_f1', -1), 4)}, "
             f"MCC {np.round(self.logger.get_value('cls_mcc', -1), 4)}")
+
+        newly_converged = self.convergence_detector.update(self.current_epoch, self._monitored_value())
+        detector = self.convergence_detector
+        self.logger.log_metrics_dict({
+            'convergence/monitored': self._monitored_value(),
+            'convergence/smoothed': detector.smoothed_value,
+            'convergence/best': detector.best_value,
+            'convergence/epochs_without_improvement': detector.epochs_without_improvement,
+        }, step=self.current_epoch)
+
+        if newly_converged:
+            self.logger.log_summary('convergence/detected_at_epoch', self.current_epoch)
+            self.logger.log_summary('convergence/best_epoch', detector.best_epoch)
+            if self.enable_early_stopping:
+                self._start_anneal_out()
+            else:
+                self.print_to_log_file(
+                    f'Convergence detected at epoch {self.current_epoch} (best epoch '
+                    f'{detector.best_epoch}). early stopping is disabled, so training continues to '
+                    f'epoch {self.num_epochs}. Consider setting num_epochs near '
+                    f'{detector.best_epoch + self.convergence_anneal_epochs} for the next run so the '
+                    f'learning rate anneals fully within the budget.')
+
+        self._save_convergence_state()
+
+        if self._final_epoch is not None and self.current_epoch >= self._final_epoch:
+            self.print_to_log_file(f'Anneal-out complete at epoch {self.current_epoch}. Stopping.')
+            # current_epoch is normally incremented by the parent's on_epoch_end; unwinding here skips
+            # the rest of run_training's loop. See ConvergenceReached for why this uses an exception.
+            raise ConvergenceReached()
+
+    def run_training(self):
+        try:
+            super().run_training()
+        except ConvergenceReached:
+            # the parent's run_training never reached its own on_train_end because we unwound its loop
+            self.on_train_end()
+
+    # ------------------------------------------------------------------ convergence persistence
+
+    @property
+    def convergence_state_file(self) -> str:
+        return join(self.output_folder, 'convergence_state.json')
+
+    def _save_convergence_state(self):
+        """
+        Persisted next to the checkpoints rather than inside them: the state is a handful of scalars,
+        and round-tripping a multi-hundred-MB checkpoint just to add them would be wasteful.
+        """
+        if self.local_rank != 0 or self.disable_checkpointing or self.output_folder is None:
+            return
+        save_json({'detector': self.convergence_detector.state_dict(),
+                   'anneal_start_epoch': self._anneal_start_epoch,
+                   'anneal_start_lr': self._anneal_start_lr,
+                   'final_epoch': self._final_epoch}, self.convergence_state_file, sort_keys=False)
+
+    def _restore_convergence_state(self):
+        if self.output_folder is None or not isfile(self.convergence_state_file):
+            return
+        state = load_json(self.convergence_state_file)
+        self.convergence_detector.load_state_dict(state['detector'])
+        final_epoch = state.get('final_epoch')
+        if final_epoch is not None and self.current_epoch < final_epoch:
+            # resuming mid-anneal: rebuild the *original* schedule (same start epoch and start LR) so
+            # the anneal continues rather than restarting from the resumed epoch and running longer
+            self._start_anneal_out(anneal_start_epoch=state['anneal_start_epoch'],
+                                   start_lr=state['anneal_start_lr'])
+            self.print_to_log_file(f'Resumed mid-anneal; will still stop at epoch {self._final_epoch}.')
+
+    def on_train_start(self):
+        super().on_train_start()
+        if self.current_epoch > 0:
+            self._restore_convergence_state()

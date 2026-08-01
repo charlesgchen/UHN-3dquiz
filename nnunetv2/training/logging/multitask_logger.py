@@ -33,9 +33,11 @@ from nnunetv2.training.logging.nnunet_logger import LocalLogger, MetaLogger
 CORE_KEYS = ('mean_fg_dice', 'ema_fg_dice', 'dice_per_class_or_region', 'train_losses',
              'val_losses', 'lrs', 'epoch_start_timestamps', 'epoch_end_timestamps')
 
-# additional epoch-indexed keys owned by this logger
+# additional epoch-indexed keys owned by this logger. The cls_* metrics are case-level (patches
+# aggregated back into cases, which is how the quiz is scored); cls_macro_f1_patch is the patch-level
+# diagnostic kept alongside it.
 MULTITASK_KEYS = ('train_losses_seg', 'train_losses_cls', 'val_losses_seg', 'val_losses_cls',
-                  'cls_balanced_accuracy', 'cls_macro_f1', 'cls_mcc')
+                  'cls_balanced_accuracy', 'cls_macro_f1', 'cls_mcc', 'cls_macro_f1_patch')
 
 
 class MultiTaskLocalLogger(LocalLogger):
@@ -97,14 +99,16 @@ class MultiTaskLocalLogger(LocalLogger):
         if ax.get_legend_handles_labels()[0]:
             ax.legend(loc=(0, 1))
 
-        # panel 2: classification metrics on the internal validation split
+        # panel 2: classification metrics on the internal validation split. Solid = case-level (what
+        # the quiz scores and what convergence detection watches), dotted = patch-level diagnostic.
         ax = ax_all[2]
-        for key, color, label in (('cls_balanced_accuracy', 'b', 'balanced accuracy'),
-                                  ('cls_macro_f1', 'g', 'macro F1'),
-                                  ('cls_mcc', 'r', 'MCC')):
+        for key, color, label, style in (('cls_balanced_accuracy', 'b', 'balanced accuracy (case)', '-'),
+                                         ('cls_macro_f1', 'g', 'macro F1 (case)', '-'),
+                                         ('cls_mcc', 'r', 'MCC (case)', '-'),
+                                         ('cls_macro_f1_patch', 'g', 'macro F1 (patch)', 'dotted')):
             values = self.my_fantastic_logging[key]
             if len(values) >= epoch + 1:
-                ax.plot(x_values, values[:epoch + 1], color=color, ls='-', label=label, linewidth=4)
+                ax.plot(x_values, values[:epoch + 1], color=color, ls=style, label=label, linewidth=3)
         ax.set_ylim(-1.05, 1.05)
         ax.set_xlabel("epoch")
         ax.set_ylabel("classification metric")

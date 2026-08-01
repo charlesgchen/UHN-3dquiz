@@ -9,10 +9,29 @@ Case labels through the dataloader
     a batch is a dict lookup on batch['keys'], with no changes to the dataloader itself.
 
 Patch-level training, case-level truth
-    Every patch inherits the subtype of the case it was cropped from. That is label noise: a patch that
-    happens to miss the lesion carries a subtype label that is not visible in it. We accept it during
-    training (the alternative, case-level training, does not fit in memory) and compensate at inference
-    by averaging patch predictions over the whole case (see the aggregation in predict_quiz.py).
+    Every patch inherits the subtype of the case it was cropped from, but that label is only *visible*
+    in patches that actually contain pancreatic tissue. Case-level training does not fit in memory, so
+    the mismatch has to be handled in the loss instead. `_patch_weights` grades each patch:
+
+        no foreground at all     -> weight 0
+            pure background or neighbouring organs. The subtype is not inferable from such a patch, so
+            the target is pure label noise and contributes nothing but gradient variance.
+        pancreas, but no lesion  -> weight cls_patch_weight_floor
+            the lesion itself is absent, but parenchymal texture, atrophy and duct calibre do carry
+            subtype signal, so these patches are down-weighted rather than dropped.
+        lesion present           -> weight 1
+
+    Set cls_patch_weighting=False to recover the unweighted baseline for an ablation.
+
+    The same idea is applied at inference with the *predicted* segmentation: predict_quiz.py weights
+    each patch's subtype probabilities by how much foreground the network sees in it before averaging
+    them into one prediction per case.
+
+Reported classification metrics
+    The quiz scores one subtype per *case*, so on_validation_epoch_end aggregates the internal split's
+    patch probabilities by case and reports both levels. The case-level numbers are the ones that drive
+    convergence detection; patch-level macro-F1 is kept as a diagnostic but systematically understates
+    performance, because it counts patches whose label is not inferable in the first place.
 
 Class imbalance (train split: 62 / 106 / 84 = subtype 0 / 1 / 2)
     Inverse-frequency class weights in the cross-entropy, computed from the *training* cases only and
@@ -105,6 +124,12 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
     cls_label_smoothing: float = 0.1
     cls_warmup_epochs: int = 25
 
+    # per-patch weighting of the classification loss (see the module docstring). The floor is the
+    # weight given to a patch that contains pancreas but no lesion; 1.0 disables the down-weighting
+    # while still dropping patches with no foreground at all.
+    cls_patch_weighting: bool = True
+    cls_patch_weight_floor: float = 0.3
+
     # convergence detection / early stopping. See nnunetv2/training/convergence.py for why stopping
     # is followed by an anneal-out phase rather than being immediate.
     enable_early_stopping: bool = True
@@ -124,6 +149,7 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
         self.logger = MultiTaskMetaLogger.adopt(self.logger)
 
         self.subtype_labels = self._load_subtype_labels()
+        self.lesion_label = self._resolve_lesion_label()
         self.cls_class_weights = None  # built in initialize(), needs the training split
         self.cls_loss = None
 
@@ -155,6 +181,24 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
                 merged[case_identifier] = int(subtype)
         return merged
 
+    def _resolve_lesion_label(self) -> int:
+        """
+        The integer label of the lesion, used to grade patches in _patch_weights.
+
+        Prefers a label literally named 'lesion' (what Dataset001_PancreasQuiz writes) and otherwise
+        falls back to the highest foreground label, which is the convention for a nested structure.
+        """
+        labels = self.dataset_json.get('labels', {}) if self.dataset_json else {}
+        for name, value in labels.items():
+            if str(name).lower() == 'lesion' and isinstance(value, int):
+                return int(value)
+        foreground = [int(v) for v in labels.values() if isinstance(v, int) and v > 0]
+        if not foreground:
+            raise RuntimeError(
+                f"cannot determine the lesion label from dataset.json labels {labels!r}; the "
+                f"classification patch weighting needs to know which label marks the lesion")
+        return max(foreground)
+
     def _compute_class_weights(self, training_identifiers: List[str]) -> torch.Tensor:
         """
         Inverse-frequency weights from the training cases only, normalised to mean 1.
@@ -180,8 +224,17 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
         super().initialize()
         training_identifiers, _ = self.do_split()
         self.cls_class_weights = self._compute_class_weights(training_identifiers).to(self.device)
+        # reduction='none' because _weighted_cls_loss applies the per-patch weights and does the
+        # reduction itself; see there for why the denominator is reproduced by hand
         self.cls_loss = nn.CrossEntropyLoss(weight=self.cls_class_weights,
-                                            label_smoothing=self.cls_label_smoothing)
+                                            label_smoothing=self.cls_label_smoothing,
+                                            reduction='none')
+        if self.cls_patch_weighting:
+            self.print_to_log_file(
+                f'classification patch weighting: lesion label {self.lesion_label} -> weight 1.0, '
+                f'foreground without lesion -> {self.cls_patch_weight_floor}, no foreground -> 0.0')
+        else:
+            self.print_to_log_file('classification patch weighting: disabled (every patch weight 1.0)')
         self.logger.update_config({
             'num_subtypes': self.num_subtypes,
             'cls_query_num': self.cls_query_num,
@@ -192,6 +245,8 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
             'cls_label_smoothing': self.cls_label_smoothing,
             'cls_warmup_epochs': self.cls_warmup_epochs,
             'cls_class_weights': self.cls_class_weights.detach().cpu().numpy().tolist(),
+            'cls_patch_weighting': self.cls_patch_weighting,
+            'cls_patch_weight_floor': self.cls_patch_weight_floor,
         })
 
     @staticmethod
@@ -223,6 +278,44 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
         ramp = min(1.0, (self.current_epoch + 1) / self.cls_warmup_epochs)
         return self.cls_loss_weight * ramp
 
+    def _patch_weights(self, seg_target: torch.Tensor) -> torch.Tensor:
+        """
+        Per-patch weight for the classification loss, in [0, 1]. See the module docstring for the
+        three tiers and why they are graded this way.
+
+        seg_target is the full-resolution ground truth, [B, 1, X, Y, Z]. nnU-Net writes its ignore
+        label as a negative value, so foreground is `> 0` rather than `!= 0`.
+        """
+        flat = seg_target.flatten(1)
+        if not self.cls_patch_weighting:
+            return torch.ones(flat.shape[0], dtype=torch.float32, device=flat.device)
+        has_foreground = (flat > 0).any(dim=1).float()
+        has_lesion = (flat == self.lesion_label).any(dim=1).float()
+        floor = float(self.cls_patch_weight_floor)
+        # lesion -> floor + (1 - floor) = 1, foreground only -> floor, nothing -> 0
+        return (floor + (1.0 - floor) * has_lesion) * has_foreground
+
+    def _weighted_cls_loss(self, cls_logits: torch.Tensor, cls_target: torch.Tensor,
+                           patch_weights: torch.Tensor) -> torch.Tensor:
+        """
+        Weighted mean CE that preserves the scale of CrossEntropyLoss(weight=..., reduction='mean').
+
+        PyTorch's weighted 'mean' reduction divides by the sum of the *class* weights of the targets,
+        not by the batch size. Reproducing that denominator with the patch weights folded in is what
+        keeps cls_loss_weight meaning the same thing whether patch weighting is on or off - normalising
+        by the batch size instead would silently rescale the seg/cls balance the moment weighting was
+        enabled, and every cls_loss_weight tuned without it would become meaningless.
+
+        With uniform patch weights this is numerically identical to the previous reduction='mean'.
+        """
+        per_sample = self.cls_loss(cls_logits, cls_target)   # already scaled by the class weights
+        denominator = (patch_weights * self.cls_class_weights[cls_target]).sum()
+        if float(denominator) <= 1e-8:
+            # no patch in this batch carries any evidence for its subtype: contribute no gradient
+            # rather than dividing by ~0. Kept in the graph so AMP and DDP see a real tensor.
+            return per_sample.sum() * 0.0
+        return (patch_weights * per_sample).sum() / denominator
+
     def _subtype_targets(self, keys) -> torch.Tensor:
         try:
             labels = [self.subtype_labels[k] for k in keys]
@@ -245,10 +338,11 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
 
         self.optimizer.zero_grad(set_to_none=True)
         cls_weight = self._current_cls_weight()
+        patch_weights = self._patch_weights(target[0] if isinstance(target, list) else target)
         with autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
             seg_output, cls_logits = self.network(data)
             seg_loss = self.loss(seg_output, target)
-            cls_loss = self.cls_loss(cls_logits.float(), cls_target)
+            cls_loss = self._weighted_cls_loss(cls_logits.float(), cls_target, patch_weights)
             total_loss = seg_loss + cls_weight * cls_loss
 
         if self.grad_scaler is not None:
@@ -264,18 +358,25 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
 
         return {'loss': total_loss.detach().cpu().numpy(),
                 'seg_loss': seg_loss.detach().cpu().numpy(),
-                'cls_loss': cls_loss.detach().cpu().numpy()}
+                'cls_loss': cls_loss.detach().cpu().numpy(),
+                # tracks how much of each batch actually carries subtype evidence. If this sits near
+                # the floor, the sampler is rarely hitting the lesion and oversampling needs raising.
+                'cls_patch_weight': float(patch_weights.mean())}
 
     def on_train_epoch_end(self, train_outputs: List[dict]):
         outputs = collate_outputs(train_outputs)
         super().on_train_epoch_end(train_outputs)
         self.logger.log('train_losses_seg', float(np.mean(outputs['seg_loss'])), self.current_epoch)
         self.logger.log('train_losses_cls', float(np.mean(outputs['cls_loss'])), self.current_epoch)
-        self.logger.log_metrics_dict({'train/cls_loss_weight': self._current_cls_weight()},
+        self.logger.log_metrics_dict({'train/cls_loss_weight': self._current_cls_weight(),
+                                      'train/cls_patch_weight': float(np.mean(outputs['cls_patch_weight']))},
                                      step=self.current_epoch)
 
     def validation_step(self, batch: dict) -> dict:
-        cls_target = self._subtype_targets(batch['keys'])
+        keys = list(batch['keys'])
+        cls_target = self._subtype_targets(keys)
+        seg_target = batch['target'][0] if isinstance(batch['target'], list) else batch['target']
+        patch_weights = self._patch_weights(seg_target.to(self.device, non_blocking=True))
 
         # Reuse the parent's segmentation validation logic verbatim by temporarily presenting a
         # segmentation-only view of the network. This keeps the pseudo-Dice computation identical to
@@ -289,13 +390,15 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
             self.network = network
 
         cls_logits = cls_logits_holder['logits'].float()
-        cls_loss = self.cls_loss(cls_logits, cls_target)
+        cls_loss = self._weighted_cls_loss(cls_logits, cls_target, patch_weights)
         # the parent's 'loss' is the segmentation loss only; report both parts and the combined value
         out['seg_loss'] = out['loss']
         out['cls_loss'] = cls_loss.detach().cpu().numpy()
         out['loss'] = out['loss'] + self._current_cls_weight() * out['cls_loss']
         out['cls_probs'] = torch.softmax(cls_logits, dim=1).detach().cpu().numpy()
         out['cls_target'] = cls_target.detach().cpu().numpy()
+        # case identifiers so on_validation_epoch_end can aggregate patches back into cases
+        out['cls_keys'] = keys
         return out
 
     def on_validation_epoch_end(self, val_outputs: List[dict]):
@@ -308,13 +411,55 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
         probs = np.concatenate([np.atleast_2d(p) for p in outputs['cls_probs']], axis=0)
         targets = np.concatenate([np.atleast_1d(t) for t in outputs['cls_target']], axis=0)
 
-        metrics = classification_metrics(targets, probs, num_classes=self.num_subtypes,
-                                         prefix='val_patch_cls/')
-        # headline metrics also go to the local log so they appear in progress.png and survive resume
-        self.logger.log('cls_balanced_accuracy', metrics['val_patch_cls/balanced_accuracy'], self.current_epoch)
-        self.logger.log('cls_macro_f1', metrics['val_patch_cls/macro_f1'], self.current_epoch)
-        self.logger.log('cls_mcc', metrics['val_patch_cls/mcc'], self.current_epoch)
-        self.logger.log_metrics_dict(metrics, step=self.current_epoch)
+        patch_metrics = classification_metrics(targets, probs, num_classes=self.num_subtypes,
+                                               prefix='val_patch_cls/')
+
+        case_targets, case_probs = self._aggregate_by_case(outputs['cls_keys'], probs, targets)
+        case_metrics = classification_metrics(case_targets, case_probs, num_classes=self.num_subtypes,
+                                              prefix='val_case_cls/')
+
+        # headline metrics also go to the local log so they appear in progress.png and survive resume.
+        # The cls_* keys hold the CASE-level values: that is the level the quiz is scored at and the
+        # level convergence detection should watch. Patch-level macro-F1 is kept alongside as a
+        # diagnostic - it is bounded below the case-level number by construction, because it counts
+        # patches whose subtype label is not inferable from the patch.
+        self.logger.log('cls_balanced_accuracy', case_metrics['val_case_cls/balanced_accuracy'], self.current_epoch)
+        self.logger.log('cls_macro_f1', case_metrics['val_case_cls/macro_f1'], self.current_epoch)
+        self.logger.log('cls_mcc', case_metrics['val_case_cls/mcc'], self.current_epoch)
+        self.logger.log('cls_macro_f1_patch', patch_metrics['val_patch_cls/macro_f1'], self.current_epoch)
+        self.logger.log_metrics_dict({**patch_metrics, **case_metrics,
+                                      'val_case_cls/n_cases': float(len(case_targets))},
+                                     step=self.current_epoch)
+
+    @staticmethod
+    def _aggregate_by_case(keys: List[str], probs: np.ndarray, targets: np.ndarray):
+        """
+        Average the patch probabilities belonging to each case into one prediction per case.
+
+        This is the training-time mirror of the aggregation in predict_quiz.py, and it reports at the
+        level the quiz is actually scored at: a case gets one subtype, not one per patch.
+
+        Uniform averaging is used here - predict_quiz's --uniform_pooling mode - rather than the
+        foreground-weighted variant it uses by default. Weighting there is driven by the *predicted*
+        segmentation, which is not available per patch at this point without a second pass, and using
+        the ground-truth weights instead would make the monitored number optimistic relative to what
+        inference can achieve. Uniform pooling is the conservative choice: the weighted variant is what
+        actually gets submitted and scores at least as well.
+
+        Note this covers only the cases the sampler happened to draw this epoch, so the case count
+        varies from epoch to epoch. That is why the convergence detector smooths its input.
+        """
+        sums, counts, case_target = {}, {}, {}
+        for key, prob, target in zip(keys, probs, targets):
+            sums[key] = sums[key] + prob if key in sums else prob.astype(np.float64)
+            counts[key] = counts.get(key, 0) + 1
+            case_target[key] = target
+        ordered = sorted(sums)
+        if not ordered:
+            return np.zeros(0, dtype=np.int64), np.zeros((0, probs.shape[-1]), dtype=np.float64)
+        case_probs = np.stack([sums[k] / counts[k] for k in ordered], axis=0)
+        case_targets = np.array([case_target[k] for k in ordered], dtype=np.int64)
+        return case_targets, case_probs
 
     def perform_actual_validation(self, save_probabilities: bool = False):
         """
@@ -335,7 +480,13 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
     # ------------------------------------------------------------------ convergence
 
     def _monitored_value(self) -> float:
-        """The scalar the convergence detector watches. Higher is better, roughly in [0, 1]."""
+        """
+        The scalar the convergence detector watches. Higher is better, roughly in [0, 1].
+
+        'cls_macro_f1' is the case-level value (see on_validation_epoch_end). Watching the patch-level
+        one instead would track a metric the model is not optimised for and cannot reach, since a large
+        share of patches carry no evidence for their own label.
+        """
         segmentation = float(self.logger.get_value('ema_fg_dice', -1))
         classification = float(self.logger.get_value('cls_macro_f1', -1))
         if self.convergence_metric == 'ema_fg_dice':
@@ -387,10 +538,11 @@ class nnUNetTrainerMultiTaskSubtype(nnUNetTrainer):
     def on_epoch_end(self):
         super().on_epoch_end()
         self.print_to_log_file(
-            'cls (patch-level, internal val): '
+            'cls (case-level, internal val): '
             f"bal_acc {np.round(self.logger.get_value('cls_balanced_accuracy', -1), 4)}, "
             f"macro_F1 {np.round(self.logger.get_value('cls_macro_f1', -1), 4)}, "
-            f"MCC {np.round(self.logger.get_value('cls_mcc', -1), 4)}")
+            f"MCC {np.round(self.logger.get_value('cls_mcc', -1), 4)} "
+            f"(patch-level macro_F1 {np.round(self.logger.get_value('cls_macro_f1_patch', -1), 4)})")
 
         newly_converged = self.convergence_detector.update(self.current_epoch, self._monitored_value())
         detector = self.convergence_detector

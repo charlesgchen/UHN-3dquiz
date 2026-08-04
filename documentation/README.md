@@ -2,6 +2,14 @@
 
 The nnU-Net documentation is being reorganized into clearer entry points.
 
+## Pancreas quiz experiment report
+
+The report-ready experiment index, normalized metrics, W&B provenance, augmentation ablations, and
+artifact manifest are in [final_report/README.md](final_report/README.md). The shorter project
+summary is in [training_experiment_summary.md](training_experiment_summary.md), and the complete
+chronological record is in
+[rsna_ct_classification_experiments.md](rsna_ct_classification_experiments.md).
+
 Start here:
 
 - If you want to train nnU-Net on your own dataset, go to [Getting Started](getting-started/README.md).

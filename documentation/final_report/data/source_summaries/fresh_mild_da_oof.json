@@ -1,0 +1,51 @@
+{
+  "oof/mcc": 0.1477212080448792,
+  "oof/balanced_accuracy": 0.4330903592924287,
+  "oof/macro_f1": 0.43322199739632766,
+  "oof/accuracy": 0.44047619047619047,
+  "oof/subtype0/sensitivity": 0.3870967741935484,
+  "oof/subtype0/specificity": 0.8052631578947368,
+  "oof/subtype0/f1": 0.3902439024390244,
+  "oof/subtype0/support": 62,
+  "oof/subtype1/sensitivity": 0.4716981132075472,
+  "oof/subtype1/specificity": 0.7123287671232876,
+  "oof/subtype1/f1": 0.5050505050505051,
+  "oof/subtype1/support": 106,
+  "oof/subtype2/sensitivity": 0.44047619047619047,
+  "oof/subtype2/specificity": 0.6309523809523809,
+  "oof/subtype2/f1": 0.40437158469945356,
+  "oof/subtype2/support": 84,
+  "oof/auroc_macro_ovr": 0.5824392424375144,
+  "oof/average_precision_macro": 0.4091624685435676,
+  "oof/subtype0/auroc": 0.6083191850594227,
+  "oof/subtype0/average_precision": 0.3139345366803673,
+  "oof/subtype1/auroc": 0.6271646420263634,
+  "oof/subtype1/average_precision": 0.5634661621779552,
+  "oof/subtype2/auroc": 0.5118339002267573,
+  "oof/subtype2/average_precision": 0.3500867067723802,
+  "oof/confusion_matrix": [
+    [
+      24,
+      15,
+      23
+    ],
+    [
+      17,
+      50,
+      39
+    ],
+    [
+      20,
+      27,
+      37
+    ]
+  ],
+  "oof/n_cases": 252,
+  "oof/folds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ]
+}

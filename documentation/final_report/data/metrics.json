@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "consolidated_utc": "2026-08-04",
+  "accepted_heldout": {
+    "n_cases": 36,
+    "whole_pancreas_dsc": 0.9325,
+    "pancreas_lesion_dsc": 0.6308,
+    "classification": {
+      "macro_f1": 0.6296296296296297,
+      "balanced_accuracy": 0.6222222222222222,
+      "accuracy": 0.6666666666666666,
+      "macro_auroc_ovr": 0.7290735841661767,
+      "macro_average_precision": 0.613372171888737,
+      "per_class_f1": [0.5, 0.7222222222222222, 0.6666666666666666],
+      "confusion_matrix": [[3, 4, 2], [0, 13, 2], [0, 4, 8]]
+    }
+  },
+  "matched_pooling_ablation": {
+    "cross_attention": {
+      "oof_no_tta_macro_f1": 0.39825959468193517,
+      "oof_8x_tta_macro_f1": 0.4003363799176563,
+      "heldout_no_tta_macro_f1": 0.4582992,
+      "heldout_8x_tta_macro_f1": 0.5833333333333334
+    },
+    "global_average_pooling": {
+      "oof_no_tta_macro_f1": 0.28712002972872536,
+      "oof_8x_tta_macro_f1": 0.28874865156418555,
+      "heldout_no_tta_macro_f1": 0.4292929292929293,
+      "heldout_8x_tta_macro_f1": 0.53003663003663
+    }
+  },
+  "submission": {
+    "path": "submissions/charles_chen_results.zip",
+    "sha256": "5403b303206f30898b93ba346d5265d85046a64f69cc04875a64ceed2ec0c78f",
+    "test_cases": 72
+  }
+}

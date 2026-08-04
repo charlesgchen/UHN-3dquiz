@@ -1,0 +1,58 @@
+{
+  "seg/dice_whole_pancreas_mean": 0.9317751379450407,
+  "seg/dice_whole_pancreas_std": 0.03650879100470101,
+  "seg/dice_whole_pancreas_n": 36,
+  "seg/dice_lesion_mean": 0.6367973362629111,
+  "seg/dice_lesion_std": 0.3048208565747891,
+  "seg/dice_lesion_n": 36,
+  "seg/dice_normal_pancreas_mean": 0.9035417192709327,
+  "seg/dice_normal_pancreas_std": 0.05610979199750718,
+  "seg/dice_normal_pancreas_n": 36,
+  "seg/f2_lesion_mean": 0.6291098993666973,
+  "seg/f2_lesion_std": 0.307882746778471,
+  "seg/f2_lesion_n": 36,
+  "cls/mcc": 0.2081399170521953,
+  "cls/balanced_accuracy": 0.45740740740740743,
+  "cls/macro_f1": 0.45829920829920834,
+  "cls/accuracy": 0.5,
+  "cls/subtype0/sensitivity": 0.2222222222222222,
+  "cls/subtype0/specificity": 1.0,
+  "cls/subtype0/f1": 0.36363636363636365,
+  "cls/subtype0/support": 9,
+  "cls/subtype1/sensitivity": 0.7333333333333333,
+  "cls/subtype1/specificity": 0.47619047619047616,
+  "cls/subtype1/f1": 0.5945945945945946,
+  "cls/subtype1/support": 15,
+  "cls/subtype2/sensitivity": 0.4166666666666667,
+  "cls/subtype2/specificity": 0.7083333333333334,
+  "cls/subtype2/f1": 0.4166666666666667,
+  "cls/subtype2/support": 12,
+  "cls/auroc_macro_ovr": 0.6731591710758377,
+  "cls/average_precision_macro": 0.5272447478741881,
+  "cls/subtype0/auroc": 0.7037037037037037,
+  "cls/subtype0/average_precision": 0.5202860746339008,
+  "cls/subtype1/auroc": 0.6317460317460317,
+  "cls/subtype1/average_precision": 0.522034249574744,
+  "cls/subtype2/auroc": 0.6840277777777778,
+  "cls/subtype2/average_precision": 0.5394139194139195,
+  "cls/confusion_matrix": [
+    [
+      2,
+      4,
+      3
+    ],
+    [
+      0,
+      11,
+      4
+    ],
+    [
+      0,
+      7,
+      5
+    ]
+  ],
+  "master_target/seg/dice_whole_pancreas_mean": true,
+  "master_target/seg/dice_lesion_mean": true,
+  "master_target/cls/macro_f1": false
+}

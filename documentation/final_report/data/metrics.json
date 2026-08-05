@@ -1,17 +1,37 @@
 {
   "schema_version": 1,
-  "consolidated_utc": "2026-08-04",
+  "consolidated_utc": "2026-08-05",
   "accepted_heldout": {
     "n_cases": 36,
     "whole_pancreas_dsc": 0.9325,
     "pancreas_lesion_dsc": 0.6308,
+    "segmentation": {
+      "aggregation": "per_case_macro_mean",
+      "std_definition": "population",
+      "whole_pancreas_dsc_mean": 0.9324859459125125,
+      "whole_pancreas_dsc_std": 0.0349981453931715,
+      "lesion_dsc_mean": 0.6308170894856855,
+      "lesion_dsc_std": 0.31252962914668947,
+      "normal_pancreas_dsc_mean": 0.9052336735373606,
+      "normal_pancreas_dsc_std": 0.05489405797472515,
+      "lesion_f2_mean": 0.6243862185783622,
+      "lesion_f2_std": 0.3150440374631751,
+      "n_cases": 36
+    },
     "classification": {
+      "class_order": ["subtype0", "subtype1", "subtype2"],
+      "mcc": 0.4904989276604043,
       "macro_f1": 0.6296296296296297,
       "balanced_accuracy": 0.6222222222222222,
       "accuracy": 0.6666666666666666,
       "macro_auroc_ovr": 0.7290735841661767,
       "macro_average_precision": 0.613372171888737,
       "per_class_f1": [0.5, 0.7222222222222222, 0.6666666666666666],
+      "per_class_sensitivity": [0.3333333333333333, 0.8666666666666667, 0.6666666666666666],
+      "per_class_specificity": [1.0, 0.6190476190476191, 0.8333333333333334],
+      "per_class_auroc": [0.7366255144032922, 0.7492063492063492, 0.701388888888889],
+      "per_class_average_precision": [0.5963691279480754, 0.6271295998687302, 0.6166177878494056],
+      "per_class_support": [9, 15, 12],
       "confusion_matrix": [[3, 4, 2], [0, 13, 2], [0, 4, 8]]
     }
   },

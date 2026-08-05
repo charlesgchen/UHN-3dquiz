@@ -1,6 +1,6 @@
 # Final report workspace
 
-Last consolidated: 2026-08-04 UTC
+Last consolidated: 2026-08-05 UTC
 
 This directory is the report-ready source of truth for the pancreas quiz experiments. It keeps
 the concise narrative and lightweight, machine-readable evidence together in the `master`
@@ -14,6 +14,7 @@ locations and are referenced rather than duplicated.
 | Whole-pancreas DSC | **0.9325** | 0.90 | Pass |
 | Pancreas-lesion DSC | **0.6308** | 0.27 | Pass |
 | Classification macro-F1 | **0.6296** | 0.60 | Pass |
+| Classification MCC | **0.4905** | Not thresholded | Reported |
 
 The accepted classifier is an equal geometric fusion of the original five-fold cross-attention
 head with 8-view flip TTA and a five-fold, 16-unit encoder mean/max MLP without TTA. It consumes
@@ -27,7 +28,7 @@ engineered case features, tabular classifiers, external datasets, or external pr
 | [winning_solution.md](winning_solution.md) | Final architecture, inference, metrics, and recommended report wording |
 | [augmentation_ablation.md](augmentation_ablation.md) | What was tried for training augmentation and TTA, with exact outcomes |
 | [experiment_metrics.csv](data/experiment_metrics.csv) | Normalized metrics for the main result and report-critical ablations |
-| [metrics.json](data/metrics.json) | Machine-readable snapshot of accepted and matched-ablation metrics |
+| [metrics.json](data/metrics.json) | Full machine-readable accepted Metrics Reloaded result plus matched pooling ablations |
 | [wandb_runs.csv](data/wandb_runs.csv) | W&B provenance for the winning system and major ablations |
 | [artifact_manifest.csv](data/artifact_manifest.csv) | Repository paths, roles, hashes, and retention policy |
 | [source_summaries/README.md](data/source_summaries/README.md) | Content-equivalent snapshots of report-critical source metric JSON files |

@@ -43,6 +43,7 @@ trained only from the supplied 252 training CT scans and annotations.
 | Frozen all-level pooling MLP | 0.4477 five-fold OOF | Below the encoder mean/max MLP. |
 | Complete-encoder fresh-head fine-tuning | 0.4659 five-fold OOF; 0.5407 held-out | Fine-tuning did not beat the original representation. |
 | Full-encoder case-bag cross-attention | 0.3628 fold-0 OOF | Rejected; subtype 2 collapsed. |
+| PANDA high-signal control without rotation/scaling | 0.1884 internal fold-0 gate | Completed 12 epochs; one-class collapse, not promoted to formal OOF. |
 | Continued cross-attention head with cue-preserving mild augmentation | 0.3982 five-fold OOF | Effectively unchanged from the original OOF baseline. |
 | Encoder-MLP feature noise/dropout | 0.5358 five-fold OOF; 0.5500 held-out | Small OOF gain did not transfer. |
 | Matched global-average-pooling head, 8x TTA | 0.2887 five-fold OOF; 0.5300 held-out | Clean ablation supports cross-attention. |

@@ -218,6 +218,19 @@ tested the joint hypothesis that the transformer/global-average route diluted fo
 that 0.7–1.4 scaling destroyed scale-dependent subtype cues. It failed the 40-epoch classification
 gate and was rejected before a longer run.
 
+The stricter no-rotation/no-scaling high-signal control was in fact run, rather than merely
+implemented. W&B run `eq0fzfvv` loaded the original same-data fold-0 segmentation backbone,
+discarded its old classifier, and trained the full encoder, decoder, and fresh near-whole-ROI
+pooling MLP for all 12 planned gate epochs. Rotation and scaling were disabled; Gaussian blur,
+simulated low resolution, gamma, and intensity inversion were removed; Gaussian noise, brightness,
+contrast, and axis mirroring were retained. Classification loss weight was 1.0 and head learning
+rate was `3e-3`. The process completed normally, wrote final/best checkpoints, ran final
+segmentation validation, and exited successfully. It nevertheless had balanced accuracy 0.3333 at
+every internal validation epoch, best internal case-level macro-F1 0.1884, and final predictions
+collapsed entirely to subtype 2. It was rejected at this explicit underfitting gate and was not
+promoted to a separate exact 51-case full-volume OOF evaluation. Accordingly, 0.1884 is an internal
+sampled validation diagnostic, not an OOF result.
+
 ## Original five-fold encoder/head corrective phase
 
 This phase starts from `nnUNetTrainerSubtypeHeadAdamW` fold-matched checkpoints. They contain no
@@ -301,6 +314,7 @@ five-fold OOF score was only 0.4659 and its held-out score was 0.5407. It was re
 | PANDA strict cross-attention Phase B fold 0 | `94y305y1` (rejected) |
 | PANDA strict Phase-B best-classification exact OOF | `egzk5gcr` (rejected) |
 | PANDA pooling-MLP + mild-geometry pilot fold 0 | `w8hbbbpi` (rejected) |
+| PANDA high-signal no-rotation/no-scaling fold-0 gate | `eq0fzfvv` (complete; one-class collapse) |
 | Original five-fold held-out mirror-TTA baseline | `jl9wh4bc` |
 | Fresh-head held-out no-TTA / mirror-TTA | `agg1ytyv`; `3do5lanc` |
 | Pooling-MLP five-fold OOF / fixed fresh-pool blend | `5kh88dq6`; `y9ecoqpx` |

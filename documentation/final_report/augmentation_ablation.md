@@ -11,8 +11,9 @@ The result is nuanced:
   folds and the provided held-out set.
 - Feature-space noise/dropout gave a small OOF improvement in one MLP experiment, but the held-out
   score fell. It was rejected as non-transferring regularization rather than called a total failure.
-- A stricter no-geometry PANDA high-signal trainer was implemented as a possible follow-up but was
-  not run. It is not evidence and must not appear as a completed ablation.
+- The high-signal PANDA control with rotation and scaling disabled **was run** as a 12-epoch fold-0
+  gate. It completed normally but remained a one-class classifier, so it was not promoted to exact
+  full-volume OOF evaluation.
 
 ## Training-time image augmentation
 
@@ -62,6 +63,16 @@ A pooling-MLP pilot reduced geometry to +/-10 degrees and 0.9-1.1 while retainin
 intensity stack. It improved to **0.2800 fold-0 OOF**, but still predicted almost no subtype-2
 cases and failed the continuation gate. A near-whole-ROI pooling MLP using the original same-data
 backbone also collapsed at **0.2009 fold-0 OOF**.
+
+The stricter high-signal follow-up was W&B run `eq0fzfvv`. It used the same near-whole-ROI view,
+disabled rotation and scaling, removed blur, simulated low resolution, gamma, and intensity
+inversion, and retained Gaussian noise, brightness, contrast, and axis mirroring. It also increased
+the classification-loss weight to 1.0 and the fresh MLP learning rate to `3e-3`. The run completed
+all 12 planned gate epochs and final segmentation validation with exit code 0. Nevertheless,
+internal case-level balanced accuracy was exactly 0.3333 at every epoch; the best internal
+case-level macro-F1 was **0.1884**, and the final epoch assigned every sampled validation case to
+subtype 2. It was therefore rejected before the separate 51-case sliding-window OOF stage. This is
+a completed negative training gate, not a missing experiment and not a formal OOF measurement.
 
 These are not clean augmentation-only comparisons because architecture, patch size, and trainable
 parameters also changed. They support the broader conclusion that augmentation was not the only

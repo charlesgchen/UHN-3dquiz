@@ -14,4 +14,4 @@ gap_heldout_8x_tta,predictions/matched_gap_head_5fold_heldout_best_cls_tta/summa
 gap_completion_log,run_logs/matched-gap-head-ablation-20260804/watcher.log,completion and evidence check,completed 2026-08-04T09:40:07Z,keep_log
 detailed_experiment_record,documentation/rsna_ct_classification_experiments.md,chronological methods and failures,master worktree copy,keep
 report_data,documentation/final_report/data/experiment_metrics.csv,normalized report table,schema in header,keep
-source_metric_snapshots,documentation/final_report/data/source_summaries/,content-equivalent report-critical summary JSON snapshots,14 JSON files plus index,keep
+source_metric_snapshots,documentation/final_report/data/source_summaries/,content-equivalent report-critical summary JSON snapshots,15 JSON files plus index,keep

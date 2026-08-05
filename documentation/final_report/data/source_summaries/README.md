@@ -21,6 +21,7 @@ large, untracked prediction directories are archived.
 | `fresh_mild_da_oof.json` | `predictions/ce_fresh_head_5fold_oof_best_cls_no_tta/summary.json` |
 | `feature_augmented_mlp_oof.json` | `predictions/paired_encoder_mlp16_meanmax_aug_5fold_oof/summary.json` |
 | `feature_augmented_mlp_heldout.json` | `predictions/paired_encoder_mlp16_meanmax_aug_heldout_no_tta/summary.json` |
+| `panda_high_signal_internal_wandb_summary.json` | `nnUNet_data/nnUNet_results/Dataset001_PancreasQuiz/nnUNetTrainerPANDAOriginalFiveFoldPoolingMLPWholeROIHighSignalPilot__nnUNetResEncUNetMPlans__3d_fullres/fold_0/wandb/run-20260803_010949-eq0fzfvv/files/wandb-summary.json` |
 
 These snapshots contain metrics and confusion matrices, not images, patient metadata, weights, or
 prediction volumes.

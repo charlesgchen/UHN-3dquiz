@@ -17,6 +17,7 @@ augmentation,restored_rich_intensity_fresh_head_fold0,oof_fold0,51,none,0.366733
 augmentation,panda_default_da_phase_b_fold0,oof_fold0,51,none,0.200913242,0.333333333,0.431372549,0.461153256,rejected_collapse
 augmentation,panda_mild_geometry_pooling_mlp_fold0,oof_fold0,51,none,0.279956427,0.369463869,0.450980392,0.598820599,rejected_collapse
 augmentation,panda_original_backbone_whole_roi_fold0,oof_fold0,51,none,0.200913242,0.333333333,0.431372549,0.613922541,rejected_collapse
+augmentation,panda_high_signal_no_rotation_scaling_fold0,internal_sampled_fold_validation,,not_applicable,0.188405797,0.333333333,,0.612008547,rejected_one_class_gate_not_formal_oof
 feature_augmentation,paired_meanmax_mlp_no_noise,oof,252,none,0.531242621,0.530456289,0.547619048,0.667513029,baseline
 feature_augmentation,paired_meanmax_mlp_noise_dropout,oof,252,none,0.535832633,0.535832633,0.551587302,0.649139369,rejected_nontransfer
 feature_augmentation,paired_meanmax_mlp_noise_dropout,heldout,36,none,0.550000000,0.550000000,0.583333333,0.747813786,rejected

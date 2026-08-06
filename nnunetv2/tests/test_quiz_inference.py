@@ -9,6 +9,7 @@ import csv
 import json
 import os
 import zipfile
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -25,6 +26,7 @@ from nnunetv2.inference.predict_quiz import (
     PROBABILITIES_JSON,
     SUBTYPE_CSV,
     MultiTaskPredictor,
+    gamma_intensity_view,
     write_subtype_outputs,
 )
 
@@ -32,8 +34,11 @@ from nnunetv2.inference.predict_quiz import (
 class _Accumulator(MultiTaskPredictor):
     """Bare accumulator: skips nnUNetPredictor.__init__ so no model or plans are needed."""
 
-    def __init__(self, foreground_weighted_pooling=True):
+    def __init__(self, foreground_weighted_pooling=True, classification_patch_pooling='weighted_mean'):
         self.foreground_weighted_pooling = foreground_weighted_pooling
+        self.classification_patch_pooling = classification_patch_pooling
+        self.save_classification_embeddings = False
+        self.save_classification_patch_embeddings = False
         self._reset_classification_accumulator()
 
 
@@ -76,6 +81,94 @@ def test_foreground_weighting_downweights_background_patches():
     assert np.isclose(probabilities.sum(), 1.0)
 
 
+def test_top1_pooling_selects_strongest_roi_evidence_patch():
+    acc = _Accumulator(foreground_weighted_pooling=True, classification_patch_pooling='top1')
+    acc.network = SimpleNamespace(classification_pooling_label=2)
+
+    lesion_rich = _seg_logits(0.9)
+    lesion_rich[:, 1], lesion_rich[:, 2] = lesion_rich[:, 2].clone(), lesion_rich[:, 1].clone()
+    lesion_poor = _seg_logits(0.1)
+    lesion_poor[:, 1], lesion_poor[:, 2] = lesion_poor[:, 2].clone(), lesion_poor[:, 1].clone()
+    acc._accumulate_classification(
+        torch.log(torch.tensor([[0.9, 0.1, 0.0]]) + 1e-12), lesion_rich)
+    acc._accumulate_classification(
+        torch.log(torch.tensor([[0.0, 0.1, 0.9]]) + 1e-12), lesion_poor)
+
+    assert np.allclose(acc.get_case_classification(), [0.9, 0.1, 0.0], atol=1e-4)
+
+
+def test_frozen_embeddings_use_same_roi_evidence_pooling_as_probabilities():
+    acc = _Accumulator(foreground_weighted_pooling=True)
+    acc.save_classification_embeddings = True
+    acc.network = SimpleNamespace(
+        classification_pooling_label=2,
+        last_classification_embedding=torch.tensor([[1.0, 3.0]]),
+    )
+    lesion_rich = _seg_logits(0.9)
+    lesion_rich[:, 1], lesion_rich[:, 2] = lesion_rich[:, 2].clone(), lesion_rich[:, 1].clone()
+    acc._accumulate_classification(torch.zeros(1, 3), lesion_rich)
+
+    assert np.allclose(acc.get_case_classification_embeddings(), [[1.0, 3.0]], atol=1e-5)
+
+
+def test_case_embeddings_are_returned_in_fold_member_order():
+    acc = _Accumulator(foreground_weighted_pooling=False)
+    acc.save_classification_embeddings = True
+    acc.network = SimpleNamespace(last_classification_embedding=torch.tensor([[2.0]]))
+    acc._active_classification_member = 1
+    acc._accumulate_classification(torch.zeros(1, 3), _seg_logits(0.5))
+
+    acc.network.last_classification_embedding = torch.tensor([[1.0]])
+    acc._active_classification_member = 0
+    acc._accumulate_classification(torch.zeros(1, 3), _seg_logits(0.5))
+
+    assert np.allclose(acc.get_case_classification_embeddings(), [[1.0], [2.0]])
+
+
+def test_patch_embeddings_preserve_each_patch_and_its_roi_evidence():
+    acc = _Accumulator(foreground_weighted_pooling=True)
+    acc.save_classification_patch_embeddings = True
+    acc.network = SimpleNamespace(
+        classification_pooling_label=2,
+        last_classification_embedding=torch.tensor([[1.0, 3.0], [2.0, 4.0]]),
+    )
+    segmentation = _seg_logits(0.5, shape=(2, 3, 4, 4, 4))
+    segmentation[:, 1], segmentation[:, 2] = (
+        segmentation[:, 2].clone(), segmentation[:, 1].clone())
+    acc._accumulate_classification(torch.zeros(2, 3), segmentation)
+
+    members = acc.get_case_classification_patch_embeddings()
+    assert len(members) == 1
+    embeddings, weights = members[0]
+    assert np.allclose(embeddings, [[1.0, 3.0], [2.0, 4.0]])
+    assert weights.shape == (2,)
+    assert np.all(weights > 0)
+
+
+def test_network_can_request_lesion_weighted_patch_pooling():
+    acc = _Accumulator(foreground_weighted_pooling=True)
+    acc.network = SimpleNamespace(classification_pooling_label=2)
+
+    lesion_rich = _seg_logits(0.9)
+    lesion_rich[:, 1], lesion_rich[:, 2] = lesion_rich[:, 2].clone(), lesion_rich[:, 1].clone()
+    lesion_poor = _seg_logits(0.1)
+    lesion_poor[:, 1], lesion_poor[:, 2] = lesion_poor[:, 2].clone(), lesion_poor[:, 1].clone()
+    acc._accumulate_classification(
+        torch.log(torch.tensor([[1.0, 0.0, 0.0]]) + 1e-12), lesion_rich)
+    acc._accumulate_classification(
+        torch.log(torch.tensor([[0.0, 1.0, 0.0]]) + 1e-12), lesion_poor)
+
+    probabilities = acc.get_case_classification()
+    assert probabilities[0] > 0.8, 'the lesion-rich patch should dominate for an ROI head'
+
+
+def test_network_rejects_invalid_classification_pooling_label():
+    acc = _Accumulator(foreground_weighted_pooling=True)
+    acc.network = SimpleNamespace(classification_pooling_label=3)
+    with pytest.raises(ValueError, match='outside segmentation channels'):
+        acc._accumulate_classification(torch.zeros(1, 3), _seg_logits(0.5))
+
+
 def test_falls_back_to_uniform_when_no_patch_has_foreground():
     """All-background case: weighting would divide by ~0, so it must degrade gracefully."""
     acc = _Accumulator(foreground_weighted_pooling=True)
@@ -93,6 +186,93 @@ def test_batched_patches_accumulate():
     acc._accumulate_classification(logits, _seg_logits(0.5, shape=(2, 3, 4, 4, 4)))
     assert acc._cls_patch_count == 2
     assert np.allclose(acc.get_case_classification(), [0.5, 0.0, 0.5], atol=1e-4)
+
+
+def test_fivefold_pooling_weights_models_equally_after_pooling_patches():
+    """Foreground mass may weight patches within a fold, but must not weight folds themselves."""
+    acc = _Accumulator(foreground_weighted_pooling=True)
+    acc._active_classification_member = 0
+    acc._accumulate_classification(
+        torch.log(torch.tensor([[1.0, 0.0, 0.0]]) + 1e-12), _seg_logits(0.9))
+    acc._active_classification_member = 1
+    acc._accumulate_classification(
+        torch.log(torch.tensor([[0.0, 1.0, 0.0]]) + 1e-12), _seg_logits(0.1))
+
+    assert np.allclose(acc.get_case_classification(), [0.5, 0.5, 0.0], atol=1e-4)
+
+
+def test_fold_ensemble_loop_marks_each_model_for_classification_pooling():
+    class _Network:
+        def load_state_dict(self, state):
+            self.member = state['member']
+
+    class _FoldPredictor(_Accumulator):
+        def __init__(self):
+            super().__init__(foreground_weighted_pooling=True)
+            self.network = _Network()
+            self.list_of_parameters = [{'member': 0}, {'member': 1}]
+            self.verbose = False
+
+        def predict_sliding_window_return_logits(self, data):
+            member = self.network.member
+            probabilities = ([1.0, 0.0, 0.0] if member == 0 else [0.0, 1.0, 0.0])
+            foreground = 0.9 if member == 0 else 0.1
+            self._accumulate_classification(
+                torch.log(torch.tensor([probabilities]) + 1e-12), _seg_logits(foreground))
+            return torch.full((3, 2, 2, 2), float(member))
+
+    predictor = _FoldPredictor()
+    segmentation_logits = predictor.predict_logits_from_preprocessed_data(torch.empty(0))
+
+    assert torch.allclose(segmentation_logits, torch.full_like(segmentation_logits, 0.5))
+    assert np.allclose(predictor.get_case_classification(), [0.5, 0.5, 0.0], atol=1e-4)
+    assert predictor._active_classification_member is None
+
+
+def test_gamma_intensity_view_retains_per_channel_statistics():
+    generator = torch.Generator().manual_seed(17)
+    x = torch.randn((2, 2, 5, 6, 7), generator=generator)
+    transformed = gamma_intensity_view(x, 0.85)
+
+    assert not torch.allclose(transformed, x)
+    assert torch.allclose(transformed.mean((2, 3, 4)), x.mean((2, 3, 4)), atol=1e-5)
+    assert torch.allclose(
+        transformed.std((2, 3, 4), correction=0),
+        x.std((2, 3, 4), correction=0),
+        atol=1e-5,
+    )
+
+
+def test_gamma_one_and_constant_inputs_are_unchanged():
+    x = torch.randn((1, 1, 4, 4, 4))
+    assert torch.allclose(gamma_intensity_view(x, 1.0), x, atol=1e-5)
+    constant = torch.full((1, 1, 4, 4, 4), 3.0)
+    assert torch.equal(gamma_intensity_view(constant, 0.85), constant)
+
+
+def test_gamma_tta_adds_classification_votes_without_changing_segmentation():
+    class _Network:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self, x):
+            self.calls += 1
+            segmentation = torch.zeros((len(x), 3, *x.shape[2:]))
+            logits = torch.tensor([[0.0, float(self.calls), 0.0]]).repeat(len(x), 1)
+            return segmentation, logits
+
+    predictor = _Accumulator(foreground_weighted_pooling=False)
+    predictor.network = _Network()
+    predictor.use_mirroring = False
+    predictor.allowed_mirroring_axes = None
+    predictor.classification_gamma_tta = (0.85, 1.15)
+    prediction = predictor._internal_maybe_mirror_and_predict(
+        torch.randn((1, 1, 4, 4, 4))
+    )
+
+    assert predictor.network.calls == 3
+    assert predictor._cls_patch_count == 3
+    assert torch.equal(prediction, torch.zeros_like(prediction))
 
 
 def test_accumulator_raises_before_any_patch():

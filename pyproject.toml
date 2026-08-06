@@ -38,6 +38,7 @@ dependencies = [
     "batchgenerators>=0.25.1",
     "numpy>=1.24",
     "scikit-learn",
+    "wandb>=0.28,<0.29",
     "scikit-image>=0.19.3",
     "SimpleITK>=2.2.1",
     "pandas",

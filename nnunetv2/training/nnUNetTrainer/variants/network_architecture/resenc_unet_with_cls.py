@@ -145,6 +145,12 @@ class ResEncUNetWithClassification(nn.Module):
 
     def forward(self, x: torch.Tensor):
         skips = self.backbone.encoder(x)
+        if getattr(self, 'capture_classification_embedding', False):
+            bottleneck = skips[-1].float()
+            spatial_dims = tuple(range(2, bottleneck.ndim))
+            self.last_classification_embedding = torch.cat(
+                (bottleneck.mean(dim=spatial_dims), bottleneck.amax(dim=spatial_dims)), dim=1
+            ).detach()
         segmentation = self.backbone.decoder(skips)
         logits = self.classification_head(skips[-1])
         return segmentation, logits

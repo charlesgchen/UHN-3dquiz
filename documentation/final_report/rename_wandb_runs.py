@@ -21,32 +21,32 @@ class RunLabel:
 
 
 LABELS = {
-    "x0pcluox": RunLabel("Source nnU-Net | Fold 0", "Source nnU-Net - 5 folds"),
-    "fffvqm32": RunLabel("Source nnU-Net | Fold 1", "Source nnU-Net - 5 folds"),
-    "22ic3abr": RunLabel("Source nnU-Net | Fold 2", "Source nnU-Net - 5 folds"),
-    "jqylrdqi": RunLabel("Source nnU-Net | Fold 3", "Source nnU-Net - 5 folds"),
-    "fm4cg0i0": RunLabel("Source nnU-Net | Fold 4", "Source nnU-Net - 5 folds"),
+    "x0pcluox": RunLabel("Original joint multitask | Fold 0", "Original joint model - 5 folds"),
+    "fffvqm32": RunLabel("Original joint multitask | Fold 1", "Original joint model - 5 folds"),
+    "22ic3abr": RunLabel("Original joint multitask | Fold 2", "Original joint model - 5 folds"),
+    "jqylrdqi": RunLabel("Original joint multitask | Fold 3", "Original joint model - 5 folds"),
+    "fm4cg0i0": RunLabel("Original joint multitask | Fold 4", "Original joint model - 5 folds"),
     "hyt8k0qs": RunLabel(
-        "Cross-attention head | Fold 0", "Cross-attention head - 5 folds"
+        "Retrained cross-attention head | Fold 0", "Retrained cross-attention head - 5 folds"
     ),
     "sjzld1g6": RunLabel(
-        "Cross-attention head | Fold 1", "Cross-attention head - 5 folds"
+        "Retrained cross-attention head | Fold 1", "Retrained cross-attention head - 5 folds"
     ),
     "6hxhbmyl": RunLabel(
-        "Cross-attention head | Fold 2", "Cross-attention head - 5 folds"
+        "Retrained cross-attention head | Fold 2", "Retrained cross-attention head - 5 folds"
     ),
     "7a8g6y3y": RunLabel(
-        "Cross-attention head | Fold 3", "Cross-attention head - 5 folds"
+        "Retrained cross-attention head | Fold 3", "Retrained cross-attention head - 5 folds"
     ),
     "6r7k05q7": RunLabel(
-        "Cross-attention head | Fold 4", "Cross-attention head - 5 folds"
+        "Retrained cross-attention head | Fold 4", "Retrained cross-attention head - 5 folds"
     ),
     "i1jb6pvz": RunLabel(
         "Encoder mean-max MLP | 5-fold OOF", "Encoder mean-max MLP - OOF"
     ),
     "jl9wh4bc": RunLabel(
-        "Cross-attention | Held-out | 8x TTA",
-        "Cross-attention - held-out 8x TTA",
+        "Retrained cross-attention | Held-out | 8x TTA",
+        "Retrained cross-attention - held-out 8x TTA",
     ),
     "mwfad9f2": RunLabel(
         "Final CT fusion | Held-out", "Final fusion - held-out"

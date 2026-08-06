@@ -259,7 +259,7 @@ Training, final evaluation, fusion, and artifact verification are recorded in th
 
 | Stage | W&B run ID | Role |
 |---|---|---|
-| Source nnU-Net folds 0-4 | `x0pcluox`, `fffvqm32`, `22ic3abr`, `jqylrdqi`, `fm4cg0i0` | Random-init backbone/segmentation training curves |
+| Original joint multitask folds 0-4 | `x0pcluox`, `fffvqm32`, `22ic3abr`, `jqylrdqi`, `fm4cg0i0` | Random-init joint segmentation/classification training curves; sampled classification diagnostics are not official full-volume scores |
 | Cross-attention head folds 0-4 | `hyt8k0qs`, `sjzld1g6`, `6hxhbmyl`, `7a8g6y3y`, `6r7k05q7` | Frozen-backbone head training curves |
 | OOF encoder embedding export | `na3sbatb` | Leakage-safe MLP training input |
 | Held-out encoder embedding export | `a4liwh6e` | MLP held-out input |

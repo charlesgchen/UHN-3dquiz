@@ -25,7 +25,7 @@ import wandb_workspaces.workspaces as ws
 ENTITY = "charlesg-chen-university-of-toronto"
 PROJECT = "uhn-pancreas-quiz"
 
-SOURCE_NNUNET_RUNS = [
+ORIGINAL_JOINT_RUNS = [
     "x0pcluox",
     "fffvqm32",
     "22ic3abr",
@@ -44,7 +44,7 @@ SEGMENTATION_VALIDATION_RUN = "jl9wh4bc"
 FINAL_CLASSIFICATION_RUN = "mwfad9f2"
 
 VISIBLE_RUNS = [
-    *SOURCE_NNUNET_RUNS,
+    *ORIGINAL_JOINT_RUNS,
     *CROSS_ATTENTION_RUNS,
     MLP_RUN,
     SEGMENTATION_VALIDATION_RUN,
@@ -61,7 +61,7 @@ def build_workspace() -> ws.Workspace:
     }
 
     required_training = ws.Section(
-        name="Required training and validation evidence",
+        name="Required loss curves and segmentation validation",
         is_open=True,
         pinned=True,
         layout_settings=ws.SectionLayoutSettings(columns=2, rows=2),
@@ -78,14 +78,6 @@ def build_workspace() -> ws.Workspace:
                 y=["train_losses_seg", "val_losses_seg"],
                 title_x="Epoch",
                 title_y="Loss",
-                **fold_line_options,
-            ),
-            wr.LinePlot(
-                title="Classification validation: macro-average F1",
-                y=["val_case_cls/macro_f1"],
-                range_y=(0, 1),
-                title_x="Epoch",
-                title_y="Macro-average F1",
                 **fold_line_options,
             ),
             wr.LinePlot(
@@ -109,7 +101,7 @@ def build_workspace() -> ws.Workspace:
         layout_settings=ws.SectionLayoutSettings(columns=2, rows=1),
         panels=[
             wr.BarPlot(
-                title="Classification: macro-F1, MCC, and balanced accuracy",
+                title="Official held-out classification (36 complete volumes)",
                 metrics=[
                     "cls/macro_f1",
                     "cls/mcc",
@@ -120,7 +112,7 @@ def build_workspace() -> ws.Workspace:
                 max_runs_to_show=10,
             ),
             wr.BarPlot(
-                title="Segmentation: whole/lesion Dice and lesion F2",
+                title="Official held-out segmentation (36 complete volumes)",
                 metrics=[
                     "seg/dice_whole_pancreas_mean",
                     "seg/dice_lesion_mean",
@@ -134,7 +126,7 @@ def build_workspace() -> ws.Workspace:
     )
 
     supporting_mlp = ws.Section(
-        name="Supporting encoder-MLP branch (collapsed)",
+        name="Supporting: one MLP architecture, five fitted CV members",
         is_open=False,
         pinned=False,
         layout_settings=ws.SectionLayoutSettings(columns=2, rows=1),

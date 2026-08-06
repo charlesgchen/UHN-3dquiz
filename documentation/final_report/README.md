@@ -47,9 +47,13 @@ is intentionally left unchanged so no raw history is lost.
 The saved view exposes only the evidence requested by `ReadMe.pdf`:
 
 - classification and segmentation training/validation loss curves;
-- case-level classification validation macro-F1 and per-label segmentation validation Dice;
+- per-label segmentation validation Dice during training;
 - a final classification scorecard with macro-F1, MCC, and balanced accuracy; and
 - a final segmentation scorecard with whole-pancreas Dice, lesion Dice, and lesion F2.
+
+The per-epoch `val_case_cls/macro_f1` diagnostic is intentionally excluded. It averages sampled
+validation patches over a varying subset of internal-fold cases, so it is not comparable to exact
+full-volume OOF evaluation or the 36-case held-out evaluation.
 
 The encoder-MLP fold curves are retained in a collapsed supporting section. The complete Metrics
 Reloaded table, per-class results, confusion matrix, AUROC, average precision, and mean/SD details

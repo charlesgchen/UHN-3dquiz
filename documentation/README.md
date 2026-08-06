@@ -13,5 +13,3 @@ This directory contains only the pancreas quiz workflow, experiment record, and 
 | [rsna_ct_classification_experiments.md](rsna_ct_classification_experiments.md) | CT-only experiment history and decisions |
 | [final_report/augmentation_ablation.md](final_report/augmentation_ablation.md) | Training augmentation and TTA ablations |
 | [final_report/README.md](final_report/README.md) | Metrics, W&B registry, and artifact manifest |
-
-The LaTeX manuscript and architecture reference are in `../report_submission/`.

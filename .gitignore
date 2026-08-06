@@ -124,3 +124,13 @@ nnUNet_data/
 /train/
 /validation/
 /test/
+
+# Large local experiment artifacts
+/predictions/
+/run_logs/
+/submissions/
+/model_weights/
+/wandb/
+
+# Reproducibility record intentionally kept despite the generic *.txt rule above
+!/requirements-reference-cu130.txt

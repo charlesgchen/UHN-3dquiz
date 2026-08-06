@@ -425,3 +425,22 @@ def test_package_submission_excludes_input_images(tmp_path):
     package_submission(str(pred), str(zip_path))
     with zipfile.ZipFile(zip_path) as archive:
         assert 'quiz_037_0000.nii.gz' not in archive.namelist()
+
+
+def test_package_submission_accepts_separate_fused_subtype_csv(tmp_path):
+    pred = tmp_path / 'segmentations'
+    pred.mkdir()
+    _write_label_map(pred / 'quiz_037.nii.gz', np.zeros((4, 4, 4), dtype=np.uint8))
+    write_subtype_outputs({'quiz_037': np.array([1.0, 0.0, 0.0])}, str(pred))
+
+    fused = tmp_path / 'fused'
+    fused.mkdir()
+    write_subtype_outputs({'quiz_037': np.array([0.0, 0.0, 1.0])}, str(fused))
+
+    zip_path = tmp_path / 'results.zip'
+    package_submission(
+        str(pred), str(zip_path), subtype_csv_path=str(fused / SUBTYPE_CSV)
+    )
+    with zipfile.ZipFile(zip_path) as archive:
+        subtype_csv = archive.read(SUBTYPE_CSV).decode()
+    assert 'quiz_037.nii.gz,2' in subtype_csv

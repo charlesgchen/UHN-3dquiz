@@ -184,14 +184,21 @@ cases are never used for checkpoint selection — using them would bias the numb
 ## 4. Predict
 
 ```bash
-MODEL="$nnUNet_results/Dataset001_PancreasQuiz/nnUNetTrainerMultiTaskSubtype__nnUNetResEncUNetMPlans__3d_fullres"
+MODEL="$nnUNet_results/Dataset001_PancreasQuiz/nnUNetTrainerSubtypeHeadAdamW__nnUNetResEncUNetMPlans__3d_fullres"
 
 # held-out validation
-nnUNetv2_predict_quiz -m "$MODEL" -i "$nnUNet_raw/Dataset001_PancreasQuiz/imagesVal" -o predictions/val -f 0
+nnUNetv2_predict_quiz -m "$MODEL" -i "$nnUNet_raw/Dataset001_PancreasQuiz/imagesVal" \
+    -o predictions/val -f 0 1 2 3 4 -chk checkpoint_best_cls.pth -step_size 0.5
 
-# test set
-nnUNetv2_predict_quiz -m "$MODEL" -i "$nnUNet_raw/Dataset001_PancreasQuiz/imagesTs" -o predictions/test -f 0
+# test cross-attention branch and segmentations
+nnUNetv2_predict_quiz -m "$MODEL" -i "$nnUNet_raw/Dataset001_PancreasQuiz/imagesTs" \
+    -o predictions/original_5fold_test_best_cls_tta -f 0 1 2 3 4 \
+    -chk checkpoint_best_cls.pth -step_size 0.5
 ```
+
+The submitted test classifier also uses the compact encoder MLP and equal geometric fusion. Use the
+complete embedding export, MLP inference, fusion, and packaging commands in the root README's
+**Inference** section.
 
 Each output folder gets `quiz_*.nii.gz`, `subtype_results.csv` (`Names`, `Subtype`), plus
 `subtype_probabilities.{csv,json}` which the evaluator needs for AUROC and average precision.
@@ -215,7 +222,14 @@ DSC 0.90+, lesion DSC 0.27+, macro-F1 0.60+).
 
 ```python
 from nnunetv2.evaluation.evaluate_quiz import package_submission
-package_submission('predictions/test', 'your_name_results.zip')
+package_submission(
+    'predictions/original_5fold_test_best_cls_tta',
+    'your_name_results.zip',
+    subtype_csv_path=(
+        'predictions/original_tta_frozen_encoder_mlp16_equal_geometric_test/'
+        'subtype_results.csv'
+    ),
+)
 ```
 
 Writes the 72 test segmentations plus `subtype_results.csv` flat at the archive root.

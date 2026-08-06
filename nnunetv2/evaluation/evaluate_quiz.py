@@ -116,16 +116,20 @@ def check_quiz_targets(metrics: Dict[str, float], track: str = 'undergraduate') 
     return {k: bool(metrics.get(k, float('nan')) >= v) for k, v in thresholds.items()}
 
 
-def package_submission(prediction_folder: str, zip_path: str, file_ending: str = '.nii.gz'):
+def package_submission(prediction_folder: str, zip_path: str, file_ending: str = '.nii.gz',
+                       subtype_csv_path: Optional[str] = None):
     """
-    Zip the test predictions in the layout the quiz asks for: the segmentations plus
-    subtype_results.csv, flat at the archive root.
+    Zip the test predictions in the layout the quiz asks for: segmentations from
+    ``prediction_folder`` plus ``subtype_results.csv``, flat at the archive root.
+
+    ``subtype_csv_path`` can point to fused classification output stored separately from the
+    segmentation predictions. If omitted, the CSV in ``prediction_folder`` is used.
     """
     segmentations = sorted(f for f in os.listdir(prediction_folder)
                            if f.endswith(file_ending) and not f.endswith('_0000' + file_ending))
-    csv_path = join(prediction_folder, SUBTYPE_CSV)
+    csv_path = subtype_csv_path or join(prediction_folder, SUBTYPE_CSV)
     if not os.path.isfile(csv_path):
-        raise FileNotFoundError(f'{SUBTYPE_CSV} not found in {prediction_folder}')
+        raise FileNotFoundError(f'{SUBTYPE_CSV} not found: {csv_path}')
     if not segmentations:
         raise RuntimeError(f'no segmentations found in {prediction_folder}')
 

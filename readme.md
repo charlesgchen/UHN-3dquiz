@@ -1,6 +1,6 @@
 # Complementary Local and Global Neural Evidence for Joint Pancreas Segmentation and CT Subtype Classification
 
-This repository contains the code and experiment record for a 3D CT system that jointly segments the pancreas and pancreatic lesion and predicts one of three lesion subtypes. It is a task-specific fork of [nnU-Net v2](https://github.com/MIC-DKFZ/nnUNet), organized according to the [MICCAI reproducibility code checklist](MICCAI-Code-Checklist.md).
+This repository contains the code and experiment record for a 3D CT system that jointly segments the pancreas and pancreatic lesion and predicts one of three lesion subtypes. It is a task-specific fork of [nnU-Net v2](https://github.com/MIC-DKFZ/nnUNet).
 
 The submitted system combines a five-fold 3D ResEnc-M nnU-Net cross-attention classifier with eight-view flip test-time augmentation and a compact five-fold MLP over spatial mean/max-pooled bottleneck features. Their probabilities are combined by the fixed geometric rule `normalize(sqrt(p_cross_attention * p_encoder_mlp))`. No external data, public pretrained weights, morphology features, clinical variables, or tabular classifier are used.
 
@@ -30,7 +30,6 @@ See the [winning solution](documentation/final_report/winning_solution.md), [aug
 | `nnunetv2/evaluation/quiz_metrics.py` | Metrics Reloaded-aligned metrics |
 | `nnunetv2/evaluation/evaluate_quiz.py` | Evaluation and submission packaging |
 | `documentation/` | Workflow, experiments, ablations, and evidence |
-| `report_submission/` | LaTeX paper and submission material |
 
 The full `nnunetv2/` package is retained because the custom trainer, preprocessing, plans, inference, and checkpoint format depend on those vendored framework internals.
 
@@ -69,7 +68,7 @@ export nnUNet_wandb_mode=online
 # export WANDB_MODE=disabled
 ~~~
 
-Dependencies and console entry points are declared in [pyproject.toml](pyproject.toml). Exact packages from completed runs remain alongside local W&B metadata when those ignored experiment folders are available.
+Dependencies and console entry points are declared in [pyproject.toml](pyproject.toml). The exact Linux/CUDA package snapshot from the accepted runs is retained in [requirements-reference-cu130.txt](requirements-reference-cu130.txt); install PyTorch for the target platform before installing this repository because CUDA wheel sources are platform-specific.
 
 ## Dataset
 
@@ -127,19 +126,36 @@ The reference plan uses CT foreground-statistic normalization, resamples to `[2.
 
 ## Training
 
-Train one fold:
+Train one fold of the accepted first-stage joint model:
 
 ~~~bash
-nnUNetv2_train 1 3d_fullres 0 -p nnUNetResEncUNetMPlans -tr nnUNetTrainerMultiTaskSubtype
+nnUNetv2_train 1 3d_fullres 0 -p nnUNetResEncUNetMPlans -tr nnUNetTrainerMultiTaskSubtypeStable
 ~~~
 
-Train all folds concurrently on two GPUs:
+Train all first-stage folds concurrently on two GPUs:
 
 ~~~bash
-nnUNetv2_train_folds_parallel -d 1 -c 3d_fullres -f 0 1 2 3 4 -g 0 1 -p nnUNetResEncUNetMPlans -tr nnUNetTrainerMultiTaskSubtype --log_folder run_logs/multitask
+nnUNetv2_train_folds_parallel -d 1 -c 3d_fullres -f 0 1 2 3 4 -g 0 1 -p nnUNetResEncUNetMPlans -tr nnUNetTrainerMultiTaskSubtypeStable --log_folder run_logs/multitask-stable
 ~~~
 
-The backbone is a six-stage 3D residual-encoder U-Net with widths `[32, 64, 128, 256, 320, 320]`. The committed subtype branch uses four learned queries, four attention heads, dropout 0.3, inverse-frequency cross-entropy, label smoothing 0.1, and classification-loss weight 0.5 warmed over 25 epochs. Lesion, pancreas-only, and background-only patches receive classification weights 1.0, 0.3, and 0.0.
+The submitted cross-attention classifier is a second-stage head fit. Each fold restores the matching completed first-stage checkpoint, freezes the encoder and decoder, resets the classification head, and trains only that head. The following fold loop reproduces the commands recorded for accepted W&B runs `hyt8k0qs`, `sjzld1g6`, `6hxhbmyl`, `7a8g6y3y`, and `6r7k05q7`:
+
+~~~bash
+SOURCE_MODEL="$nnUNet_results/Dataset001_PancreasQuiz/nnUNetTrainerMultiTaskSubtypeStable__nnUNetResEncUNetMPlans__3d_fullres"
+
+for FOLD in 0 1 2 3 4; do
+  nnUNet_subtype_source_checkpoint="$SOURCE_MODEL/fold_${FOLD}/checkpoint_final.pth" \
+    nnUNetv2_train 1 3d_fullres "$FOLD" \
+      -p nnUNetResEncUNetMPlans \
+      -tr nnUNetTrainerSubtypeHeadAdamW
+done
+~~~
+
+The fold-specific environment variable is required: using nnU-Net's generic `-pretrained_weights` option would omit segmentation output layers. Each accepted `checkpoint_best_cls.pth` contains the complete encoder, decoder, and classification head needed for inference.
+
+The backbone is a six-stage 3D residual-encoder U-Net with widths `[32, 64, 128, 256, 320, 320]`. The first-stage subtype branch uses four learned queries, four attention heads, dropout 0.3, inverse-frequency cross-entropy, label smoothing 0.1, and classification-loss weight 0.5 warmed over 25 epochs. Lesion, pancreas-only, and background-only patches receive classification weights 1.0, 0.3, and 0.0.
+
+The accepted second stage retains the four-query/four-head architecture and dropout 0.3, uses label smoothing 0.05, oversamples foreground at 0.66, and trains the 416,643 head parameters for at most 75 epochs with AdamW at learning rate `1e-4`, weight decay `1e-4`, and gradient clipping at 1.0. `checkpoint_best_cls.pth` follows the smoothed internal case-level macro-F1 and never consults the 36-case held-out development set.
 
 The trainer detects convergence after at least 100 epochs with patience 50, then anneals the learning rate to zero over 25 epochs. Full defaults and the reason for annealed stopping are in the [workflow](documentation/pancreas_quiz_workflow.md).
 
@@ -147,11 +163,30 @@ Standard 3D training uses rotation/scaling, mirroring, noise/blur, brightness, c
 
 ## Trained models and reproducibility scope
 
-Weights are not published as a separate download. Training writes model folders beneath `$nnUNet_results/Dataset001_PancreasQuiz/`.
+The accepted inference weights are available in the [Google Drive model bundle](https://drive.google.com/drive/folders/1edocHhiA3gDMbzzyXaC8gDO3bQCwmCl1?usp=sharing). Once downloaded, preserve the bundle layout shown below or update the paths in the inference commands.
 
-When the original local artifact tree accompanies this checkout, accepted nnU-Net checkpoints are under `nnUNet_data/nnUNet_results/`, compact MLP weights are under `predictions/`, and their roles and hashes are in [artifact_manifest.csv](documentation/final_report/data/artifact_manifest.csv). These large paths are intentionally ignored by Git.
+~~~text
+nnUNetTrainerSubtypeHeadAdamW__nnUNetResEncUNetMPlans__3d_fullres/
+├── dataset.json
+├── plans.json
+├── fold_0/checkpoint_best_cls.pth
+├── fold_1/checkpoint_best_cls.pth
+├── fold_2/checkpoint_best_cls.pth
+├── fold_3/checkpoint_best_cls.pth
+└── fold_4/checkpoint_best_cls.pth
 
-The repository includes the complete accepted post-hoc pipeline: OOF feature export, compact MLP training, held-out/test MLP inference, and arithmetic or geometric neural-probability fusion. A fresh clone still needs the supplied private dataset and trained nnU-Net checkpoints, because neither can be redistributed here.
+frozen_embedding_mlp16_5fold_oof/
+└── models/
+    ├── fold_0.pth
+    ├── fold_1.pth
+    ├── fold_2.pth
+    ├── fold_3.pth
+    └── fold_4.pth
+~~~
+
+In the original local artifact tree, the nnU-Net model folder is beneath `nnUNet_data/nnUNet_results/Dataset001_PancreasQuiz/` and the compact MLP folder is `predictions/frozen_embedding_mlp16_5fold_oof/`. Per-file SHA-256 hashes are in [artifact_manifest.csv](documentation/final_report/data/artifact_manifest.csv). These large artifact paths are ignored by Git.
+
+The repository includes the complete accepted post-hoc pipeline: OOF feature export, compact MLP training, held-out/test MLP inference, and arithmetic or geometric neural-probability fusion. A fresh clone still needs the supplied private dataset and the separate model bundle; the dataset cannot be redistributed here.
 
 ## Accepted encoder-MLP and geometric fusion
 
@@ -235,41 +270,96 @@ python scripts/evaluate_probability_ensemble.py \
 
 Fusion computes `normalize(sqrt(p_attention * p_mlp))`; it does not fit a validation-set weight, bias, threshold, or meta-classifier. Expected held-out macro-F1 is `0.6296`.
 
-For the unlabelled test set, export embeddings with `nnUNetv2_predict_quiz --disable_tta --save_classification_embeddings`, run `evaluate_frozen_embedding_mlp_heldout.py --split test`, produce cross-attention probabilities with ordinary 8-view TTA, and run `evaluate_probability_ensemble.py --split test` with the same equal geometric weights.
+The complete unlabelled-test commands are given in the next section.
 
 ## Inference
 
-Run five-fold inference. Mirroring TTA and foreground-evidence-weighted patch pooling are enabled by default.
+Run the complete submitted five-fold inference from the repository root:
 
 ~~~bash
-MODEL="$nnUNet_results/Dataset001_PancreasQuiz/nnUNetTrainerMultiTaskSubtype__nnUNetResEncUNetMPlans__3d_fullres"
+MODEL="$nnUNet_results/Dataset001_PancreasQuiz/nnUNetTrainerSubtypeHeadAdamW__nnUNetResEncUNetMPlans__3d_fullres"
+MLP_MODELS="predictions/frozen_embedding_mlp16_5fold_oof"
+TEST_IMAGES="$nnUNet_raw/Dataset001_PancreasQuiz/imagesTs"
 
-nnUNetv2_predict_quiz -m "$MODEL" -i "$nnUNet_raw/Dataset001_PancreasQuiz/imagesVal" -o predictions/val -f 0 1 2 3 4
-nnUNetv2_predict_quiz -m "$MODEL" -i "$nnUNet_raw/Dataset001_PancreasQuiz/imagesTs" -o predictions/test -f 0 1 2 3 4
+# 1. Export one no-TTA mean/max encoder embedding per fold and test case.
+nnUNetv2_predict_quiz \
+  -m "$MODEL" \
+  -i "$TEST_IMAGES" \
+  -o predictions/original_5fold_test_best_cls_no_tta_embeddings \
+  -f 0 1 2 3 4 \
+  -chk checkpoint_best_cls.pth \
+  -step_size 0.5 \
+  --disable_tta \
+  --save_classification_embeddings
+
+# 2. Apply five compact MLPs to five encoder embeddings (25 predictions/case).
+python scripts/evaluate_frozen_embedding_mlp_heldout.py \
+  --models "$MLP_MODELS" \
+  --embeddings predictions/original_5fold_test_best_cls_no_tta_embeddings/classification_embeddings \
+  --output predictions/frozen_embedding_mlp16_test \
+  --split test \
+  --run-name encoder-meanmax-mlp16-test-no-tta \
+  --wandb-group neural-encoder-head-product-ensemble-20260803
+
+# 3. Run the cross-attention branch with all eight spatial mirror views.
+nnUNetv2_predict_quiz \
+  -m "$MODEL" \
+  -i "$TEST_IMAGES" \
+  -o predictions/original_5fold_test_best_cls_tta \
+  -f 0 1 2 3 4 \
+  -chk checkpoint_best_cls.pth \
+  -step_size 0.5
+
+# 4. Fuse the two neural classification branches with the fixed geometric rule.
+python scripts/evaluate_probability_ensemble.py \
+  --probabilities \
+    predictions/original_5fold_test_best_cls_tta/subtype_probabilities.json \
+    predictions/frozen_embedding_mlp16_test/probabilities.json \
+  --probability-keys root mlp \
+  --weights 1 1 \
+  --aggregation geometric \
+  --split test \
+  --output predictions/original_tta_frozen_encoder_mlp16_equal_geometric_test \
+  --run-name original-tta-frozen-encoder-mlp16-equal-geometric-test \
+  --wandb-group neural-encoder-head-product-ensemble-20260803
 ~~~
 
-Useful options are `-chk checkpoint_best.pth`, `-step_size 0.5`, `--disable_tta`, `--uniform_pooling`, and `-device {cuda,cpu,mps}`. Outputs include NIfTI segmentations, `subtype_results.csv`, and subtype probabilities in CSV and JSON.
+The TTA directory contains the submitted segmentations, while the fusion directory contains the submitted subtype labels. Package them together without overwriting either component output:
+
+~~~bash
+python - <<'PY'
+from pathlib import Path
+from nnunetv2.evaluation.evaluate_quiz import package_submission
+
+Path("submissions").mkdir(exist_ok=True)
+package_submission(
+    "predictions/original_5fold_test_best_cls_tta",
+    "submissions/my_results.zip",
+    subtype_csv_path=(
+        "predictions/original_tta_frozen_encoder_mlp16_equal_geometric_test/"
+        "subtype_results.csv"
+    ),
+)
+PY
+~~~
+
+Useful predictor options are `-step_size 0.5`, `--disable_tta`, `--uniform_pooling`, and `-device {cuda,cpu,mps}`. Outputs include NIfTI segmentations, `subtype_results.csv`, subtype probabilities in CSV and JSON, and optional classification embeddings.
 
 No morphology-based postprocessing is used. Fold/view segmentation probabilities are averaged and converted to labels by argmax; neural patch probabilities are aggregated at case level.
 
 ## Evaluation
 
-Evaluate and save machine-readable metrics:
+Evaluate the accepted TTA segmentation output and retain a separate machine-readable summary:
 
 ~~~bash
-nnUNetv2_evaluate_quiz -i predictions/val -d "$nnUNet_raw/Dataset001_PancreasQuiz" -o predictions/val/summary.json --track undergraduate
+nnUNetv2_evaluate_quiz \
+  -i predictions/reset_head_5fold_val_case_embeddings_tta \
+  -d "$nnUNet_raw/Dataset001_PancreasQuiz" \
+  -o predictions/reset_head_5fold_val_case_embeddings_tta/evaluation_summary.json \
+  --track undergraduate
 ~~~
 
-Use `--track master` for the stricter 0.91 whole-pancreas Dice, 0.31 lesion Dice, and 0.70 macro-F1 targets. The evaluator reports segmentation mean/standard deviation and classification MCC, balanced accuracy, macro-F1, per-class sensitivity/specificity/F1, confusion matrix, one-vs-rest AUROC, and average precision.
-
-Package test predictions:
-
-~~~bash
-python - <<'PY'
-from nnunetv2.evaluation.evaluate_quiz import package_submission
-package_submission("predictions/test", "submissions/my_results.zip")
-PY
-~~~
+Use `--track master` for the stricter 0.91 whole-pancreas Dice, 0.31 lesion Dice, and 0.70 macro-F1 targets. The evaluator reports segmentation mean/standard deviation and classification MCC, balanced accuracy, macro-F1, per-class sensitivity/specificity/F1, confusion matrix, one-vs-rest AUROC, and average precision. The geometric-fusion command above writes the accepted classification metrics to `predictions/original_tta_frozen_encoder_mlp16_equal_geometric_heldout/summary.json`; the headline result combines the unchanged TTA segmentation endpoints with those fused classification metrics.
 
 ## Tests
 
@@ -289,7 +379,6 @@ Remove `-m "not slow"` to include tests that instantiate the full network or exe
 | [Experiment summary](documentation/training_experiment_summary.md) | Main comparisons |
 | [CT experiment record](documentation/rsna_ct_classification_experiments.md) | Chronological trials |
 | [Final report evidence](documentation/final_report/README.md) | Metrics and artifact manifest |
-| [Paper source](report_submission/paper.tex) | MICCAI-style LaTeX report |
 
 Formal runs are recorded in `charlesg-chen-university-of-toronto/uhn-pancreas-quiz`; immutable IDs are catalogued in [wandb_runs.csv](documentation/final_report/data/wandb_runs.csv).
 

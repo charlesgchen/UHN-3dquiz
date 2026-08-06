@@ -33,6 +33,7 @@ engineered case features, tabular classifiers, external datasets, or external pr
 | [artifact_manifest.csv](data/artifact_manifest.csv) | Repository paths, roles, hashes, and retention policy |
 | [source_summaries/README.md](data/source_summaries/README.md) | Content-equivalent snapshots of report-critical source metric JSON files |
 | [create_wandb_view.py](create_wandb_view.py) | Reproducible definition of the compact final-report W&B saved view |
+| [rename_wandb_runs.py](rename_wandb_runs.py) | Idempotent mapping from immutable W&B run IDs to readable display and group names |
 | [../training_experiment_summary.md](../training_experiment_summary.md) | Short overall experiment summary |
 | [../rsna_ct_classification_experiments.md](../rsna_ct_classification_experiments.md) | Detailed chronological experiment record, now copied into `master` |
 | [../pancreas_quiz_workflow.md](../pancreas_quiz_workflow.md) | Original end-to-end nnU-Net workflow |

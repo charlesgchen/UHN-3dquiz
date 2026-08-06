@@ -1,6 +1,6 @@
 # Final report workspace
 
-Last consolidated: 2026-08-05 UTC
+Last consolidated: 2026-08-06 UTC
 
 This directory is the report-ready source of truth for the pancreas quiz experiments. It keeps
 the concise narrative and lightweight, machine-readable evidence together in the `master`
@@ -32,9 +32,27 @@ engineered case features, tabular classifiers, external datasets, or external pr
 | [wandb_runs.csv](data/wandb_runs.csv) | W&B provenance for the winning system and major ablations |
 | [artifact_manifest.csv](data/artifact_manifest.csv) | Repository paths, roles, hashes, and retention policy |
 | [source_summaries/README.md](data/source_summaries/README.md) | Content-equivalent snapshots of report-critical source metric JSON files |
+| [create_wandb_view.py](create_wandb_view.py) | Reproducible definition of the compact final-report W&B saved view |
 | [../training_experiment_summary.md](../training_experiment_summary.md) | Short overall experiment summary |
 | [../rsna_ct_classification_experiments.md](../rsna_ct_classification_experiments.md) | Detailed chronological experiment record, now copied into `master` |
 | [../pancreas_quiz_workflow.md](../pancreas_quiz_workflow.md) | Original end-to-end nnU-Net workflow |
+
+## W&B presentation
+
+Use the manual saved view [Final Report - Core Metrics](https://wandb.ai/charlesg-chen-university-of-toronto/uhn-pancreas-quiz?nw=0imnn6sk47d),
+not the project's automatic workspace. The automatic workspace creates a panel for every logged key and
+is intentionally left unchanged so no raw history is lost.
+
+The saved view exposes only the evidence requested by `ReadMe.pdf`:
+
+- classification and segmentation training/validation loss curves;
+- case-level classification validation macro-F1 and per-label segmentation validation Dice;
+- a final classification scorecard with macro-F1, MCC, and balanced accuracy; and
+- a final segmentation scorecard with whole-pancreas Dice, lesion Dice, and lesion F2.
+
+The encoder-MLP fold curves are retained in a collapsed supporting section. The complete Metrics
+Reloaded table, per-class results, confusion matrix, AUROC, average precision, and mean/SD details
+belong in the written report rather than separate top-level W&B panels.
 
 ## Evaluation convention
 

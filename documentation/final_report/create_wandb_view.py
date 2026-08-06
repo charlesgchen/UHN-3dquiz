@@ -24,6 +24,7 @@ import wandb_workspaces.workspaces as ws
 
 ENTITY = "charlesg-chen-university-of-toronto"
 PROJECT = "uhn-pancreas-quiz"
+SAVED_VIEW_URL = "https://wandb.ai/charlesg-chen-university-of-toronto/uhn-pancreas-quiz?nw=0imnn6sk47d"
 
 ORIGINAL_JOINT_RUNS = [
     "x0pcluox",
@@ -51,6 +52,23 @@ VISIBLE_RUNS = [
     FINAL_CLASSIFICATION_RUN,
 ]
 
+CLASSIFICATION_VALIDATION_REPORT = """\
+### Classification validation: authoritative complete-volume scores
+
+Use this table for model comparison and quoted results. Every row evaluates the same 36 held-out
+CT volumes with one prediction per case; no morphology or engineered case-level features are used.
+
+| Classifier | Protocol | Macro-F1 | MCC | Balanced accuracy |
+|---|---|---:|---:|---:|
+| Original joint multitask head | Five-fold complete-volume inference | 0.4840 | 0.2117 | 0.4722 |
+| Retrained cross-attention head | Five-fold, 8-view flip TTA | 0.5833 | 0.3971 | 0.5722 |
+| Encoder mean/max MLP | Five-fold encoder embeddings | 0.5839 | 0.4428 | 0.5889 |
+| Final equal geometric fusion | Cross-attention + encoder MLP | **0.6296** | **0.4905** | **0.6222** |
+
+The per-epoch classification plot above is a training diagnostic only: its sampled case set changes
+each epoch. Use it to inspect learning dynamics, never as the reported validation score.
+"""
+
 
 def build_workspace() -> ws.Workspace:
     fold_line_options = {
@@ -61,7 +79,7 @@ def build_workspace() -> ws.Workspace:
     }
 
     required_training = ws.Section(
-        name="Required loss curves and segmentation validation",
+        name="Training curves and validation diagnostics",
         is_open=True,
         pinned=True,
         layout_settings=ws.SectionLayoutSettings(columns=2, rows=2),
@@ -81,6 +99,14 @@ def build_workspace() -> ws.Workspace:
                 **fold_line_options,
             ),
             wr.LinePlot(
+                title="Classification diagnostic: sampled-case macro-F1 (not official)",
+                y=["val_case_cls/macro_f1"],
+                range_y=(0, 1),
+                title_x="Epoch",
+                title_y="Sampled-case macro-F1",
+                **fold_line_options,
+            ),
+            wr.LinePlot(
                 title="Segmentation validation: per-label Dice",
                 y=[
                     "dice_per_class_or_region/class_1",
@@ -95,11 +121,12 @@ def build_workspace() -> ws.Workspace:
     )
 
     final_validation = ws.Section(
-        name="Final held-out validation scorecard",
+        name="Authoritative full-volume held-out validation (use these scores)",
         is_open=True,
         pinned=True,
-        layout_settings=ws.SectionLayoutSettings(columns=2, rows=1),
+        layout_settings=ws.SectionLayoutSettings(columns=2, rows=2),
         panels=[
+            wr.MarkdownPanel(markdown=CLASSIFICATION_VALIDATION_REPORT),
             wr.BarPlot(
                 title="Official held-out classification (36 complete volumes)",
                 metrics=[
@@ -205,8 +232,13 @@ def main() -> None:
         )
         return
 
-    workspace.save()
-    print(workspace.url)
+    saved_workspace = ws.Workspace.from_url(SAVED_VIEW_URL)
+    saved_workspace.name = workspace.name
+    saved_workspace.sections = workspace.sections
+    saved_workspace.settings = workspace.settings
+    saved_workspace.runset_settings = workspace.runset_settings
+    saved_workspace.save()
+    print(saved_workspace.url)
 
 
 if __name__ == "__main__":
